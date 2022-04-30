@@ -29,7 +29,7 @@ class PreprocessingBuilder:
         if data_has_categorical_features(data):
             preprocessing_builder = preprocessing_builder.with_categorical()
         if data_has_text_features(data):
-            preprocessing_builder = preprocessing_builder.with_text()
+            preprocessing_builder = preprocessing_builder.with_text_vectorizer()
         if data_has_image_features(data):
             preprocessing_builder = preprocessing_builder.with_image()
         return preprocessing_builder.to_builder()
@@ -48,7 +48,7 @@ class PreprocessingBuilder:
             self._builder.add_node('scaling')
         return self
 
-    def with_text(self):
+    def with_text_vectorizer(self):
         if self.task_type != TaskTypesEnum.ts_forecasting:
             self._builder.add_node('tfidf')
         return self
