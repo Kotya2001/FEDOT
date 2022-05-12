@@ -1,4 +1,4 @@
-from typing import List, Optional, Union, Any
+from typing import Any, List, Optional, Union
 
 from fedot.core.composer.gp_composer.gp_composer import PipelineComposerRequirements
 from fedot.core.log import Log
@@ -6,9 +6,9 @@ from fedot.core.optimisers.gp_comp.gp_optimiser import EvoGraphOptimiser, GPGrap
 from fedot.core.optimisers.gp_comp.iterator import SequenceIterator, fibonacci_sequence
 from fedot.core.optimisers.gp_comp.operators.inheritance import GeneticSchemeTypesEnum
 from fedot.core.optimisers.gp_comp.parameters.mutation_prob import AdaptiveMutationProb
-from fedot.core.optimisers.gp_comp.parameters.population_size import PopulationSize, AdaptivePopulationSize
-from fedot.core.optimisers.optimizer import GraphGenerationParams
+from fedot.core.optimisers.gp_comp.parameters.population_size import AdaptivePopulationSize, PopulationSize
 from fedot.core.optimisers.objective.objective import Objective
+from fedot.core.optimisers.optimizer import GraphGenerationParams
 
 DEFAULT_MAX_POP_SIZE = 55
 

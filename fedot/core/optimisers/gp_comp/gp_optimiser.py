@@ -1,14 +1,16 @@
 from copy import deepcopy
 from functools import partial
 from itertools import zip_longest
-from typing import Any, Optional, Tuple, Union, List, Iterable
+from typing import Any, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
+from fedot.core.optimisers.gp_comp.generation_keeper import GenerationKeeper
 from tqdm import tqdm
 
 from fedot.core.composer.constraint import constraint_function
 from fedot.core.composer.gp_composer.gp_composer import PipelineComposerRequirements
 from fedot.core.log import Log
+from fedot.core.optimisers.generation_keeper import GenerationKeeper
 from fedot.core.optimisers.gp_comp.gp_operators import (
     clean_operators_history,
     num_of_parents_in_crossover,
@@ -18,18 +20,17 @@ from fedot.core.optimisers.gp_comp.individual import Individual
 from fedot.core.optimisers.gp_comp.operators.crossover import CrossoverTypesEnum, crossover
 from fedot.core.optimisers.gp_comp.operators.evaluation import EvaluationDispatcher
 from fedot.core.optimisers.gp_comp.operators.inheritance import GeneticSchemeTypesEnum, inheritance
-from fedot.core.optimisers.generation_keeper import GenerationKeeper
 from fedot.core.optimisers.gp_comp.operators.mutation import MutationTypesEnum, mutation
 from fedot.core.optimisers.gp_comp.operators.operator import PopulationT
-from fedot.core.optimisers.gp_comp.parameters.population_size import PopulationSize, ConstRatePopulationSize
 from fedot.core.optimisers.gp_comp.operators.regularization import RegularizationTypesEnum, regularized_population
 from fedot.core.optimisers.gp_comp.operators.selection import SelectionTypesEnum, selection
-from fedot.core.utilities.grouped_condition import GroupedCondition
+from fedot.core.optimisers.gp_comp.parameters.population_size import ConstRatePopulationSize, PopulationSize
 from fedot.core.optimisers.graph import OptGraph
-from fedot.core.optimisers.optimizer import GraphGenerationParams, GraphOptimiser, GraphOptimiserParameters
-from fedot.core.optimisers.timer import OptimisationTimer
 from fedot.core.optimisers.objective.objective import Objective
 from fedot.core.optimisers.objective.objective_eval import ObjectiveEvaluate
+from fedot.core.optimisers.optimizer import GraphGenerationParams, GraphOptimiser, GraphOptimiserParameters
+from fedot.core.optimisers.timer import OptimisationTimer
+from fedot.core.utilities.grouped_condition import GroupedCondition
 
 MAX_NUM_OF_GENERATED_INDS = 10000
 
@@ -129,7 +130,7 @@ class EvoGraphOptimiser(GraphOptimiser):
         max_stagnation_length = parameters.stopping_after_n_generation or requirements.num_of_generations
         self.stop_optimisation = \
             GroupedCondition(self.log) \
-            .add_condition(
+                .add_condition(
                 lambda: self.timer.is_time_limit_reached(self.generations.generation_num),
                 'Optimisation stopped: Time limit is reached'
             ).add_condition(
