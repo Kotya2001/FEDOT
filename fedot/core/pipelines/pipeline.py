@@ -18,6 +18,7 @@ from fedot.core.pipelines.node import Node, PrimaryNode, SecondaryNode
 from fedot.core.pipelines.template import PipelineTemplate
 from fedot.core.pipelines.tuning.unified import PipelineTuner
 from fedot.core.repository.tasks import TaskTypesEnum
+from fedot.preprocessing.cache import PreprocessingCache
 from fedot.preprocessing.preprocessing import DataPreprocessor, update_indices_for_time_series
 
 ERROR_PREFIX = 'Invalid pipeline configuration:'
@@ -141,10 +142,13 @@ class Pipeline(Graph):
 
         _replace_n_jobs_in_nodes(self, n_jobs)
 
+        preprocessing_cache = PreprocessingCache()
+
         if not use_fitted:
             self.unfit(mode='all', unfit_preprocessor=True)
         else:
             self.unfit(mode='data_operations', unfit_preprocessor=False)
+            self.preprocessor = preprocessing_cache.try_find_preprocessor(self)
 
         # Make copy of the input data to avoid performing inplace operations
         copied_input_data = deepcopy(input_data)
@@ -155,6 +159,7 @@ class Pipeline(Graph):
 
         copied_input_data = self.preprocessor.convert_indexes_for_fit(pipeline=self,
                                                                       data=copied_input_data)
+        preprocessing_cache.add_preprocessor(self)
 
         copied_input_data = self._assign_data_to_nodes(copied_input_data)
 
