@@ -3,7 +3,6 @@ from typing import Dict, List, Optional, Union
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import LabelEncoder
 
 from fedot.core.data.data import InputData, OutputData, data_type_is_table, data_type_is_ts
 from fedot.core.data.data_preprocessing import (
@@ -28,6 +27,9 @@ from fedot.preprocessing.data_types import NAME_CLASS_INT, TableTypesCorrector
 # The allowed percent of empty samples in features.
 # Example: 90% objects in features are 'nan', then drop this feature from data.
 from fedot.preprocessing.structure import DEFAULT_SOURCE_NAME, PipelineStructureExplorer
+from sklearn.exceptions import NotFittedError
+from sklearn.preprocessing import LabelEncoder
+from sklearn.utils.validation import check_is_fitted
 
 ALLOWED_NAN_PERCENT = 0.9
 
@@ -57,6 +59,11 @@ class DataPreprocessor:
         self.types_correctors = {}
         self.structure_analysis = PipelineStructureExplorer()
         self.main_target_source_name = None
+
+        self._is_imputer_trained = False
+        self._is_encoder_trained = False
+        self.imputer = ImputationImplementation()
+        self.encoder = OneHotEncodingImplementation()
 
         self.log = log or default_log(__name__)
 
@@ -312,12 +319,12 @@ class DataPreprocessor:
         if isinstance(data, InputData):
             return self._apply_imputation_unidata(data)
         if isinstance(data, MultiModalData):
-            for data_source_name, values in data.items():
-                data[data_source_name].features = self._apply_imputation_unidata(values)
+            for data_source_name, value in data.items():
+                data[data_source_name].features = self._apply_imputation_unidata(value)
             return data
         raise ValueError(f"Data format is not supported.")
 
-    def one_hot_encoding_for_fit(self, data: Union[InputData], source_name: str = DEFAULT_SOURCE_NAME):
+    def one_hot_encoding_for_fit(self, data: InputData, source_name: str = DEFAULT_SOURCE_NAME):
         """
         Encode categorical features to numerical. In additional,
         save encoders to use later for prediction data.
@@ -327,17 +334,14 @@ class DataPreprocessor:
         :return encoder: operation for preprocessing categorical features
         """
 
-        encoder = self._create_onehot_encoder(data)
+        self._fit_onehot_encoder_if_needed(data, source_name)
 
-        encoder_output = encoder.transform(data, True)
+        encoder_output = self.encoder.transform(data, True)
         transformed = encoder_output.predict
         data.features = transformed
         data.supplementary_data = encoder_output.supplementary_data
 
-        # Store encoder to make prediction in the future
-        self.features_encoders.update({source_name: encoder})
-
-    def label_encoding_for_fit(self, data: Union[InputData], source_name: str = DEFAULT_SOURCE_NAME):
+    def label_encoding_for_fit(self, data: InputData, source_name: str = DEFAULT_SOURCE_NAME):
         """
         Encode categorical features to numerical using LabelEncoder. In additional,
         save encoders to use later for prediction data.
@@ -364,15 +368,33 @@ class DataPreprocessor:
         data.features = data.features[:border]
         data.target = data.target[:border]
 
-    @staticmethod
-    def _apply_imputation_unidata(data: InputData):
+    def _apply_imputation_unidata(self, data: InputData):
         """ Fill in the gaps in the data inplace.
 
         :param data: data for fill in the gaps
         """
-        imputer = ImputationImplementation()
-        output_data = imputer.fit_transform(data)
-        data.features = output_data.predict
+        # imputer = ImputationImplementation()
+        fit_from_scratch = False
+        num_fitted, cat_fitted = True, True
+        try:
+            check_is_fitted(self.imputer.imputer_cat)
+        except NotFittedError as exc:
+            cat_fitted = False
+        try:
+            check_is_fitted(self.imputer.imputer_num)
+        except NotFittedError as exc:
+            num_fitted = False
+        if num_fitted or cat_fitted:
+            output_data = self.imputer.transform(data)
+            data.features = output_data.predict
+        else:
+            fit_from_scratch = True
+        if fit_from_scratch and self._is_imputer_trained:
+            self.log.info("FALSY IMPUTER TRAINED")
+        if fit_from_scratch and not self._is_imputer_trained:
+            output_data = self.imputer.fit_transform(data)
+            self._is_imputer_trained = True
+            data.features = output_data.predict
         return data
 
     def _apply_categorical_encoding(self, data: InputData, source_name: str):
@@ -458,20 +480,26 @@ class DataPreprocessor:
         else:
             return self.main_target_source_name
 
-    @staticmethod
-    def _create_onehot_encoder(data: InputData) -> Union[OneHotEncodingImplementation, None]:
+    def _fit_onehot_encoder_if_needed(self, data: InputData, source_name: str):
         """
         Fills in the gaps, converts categorical features using OneHotEncoder and create encoder.
 
         :param data: data to preprocess
         """
 
-        encoder = None
-        if data_has_categorical_features(data):
-            encoder = OneHotEncodingImplementation()
-            encoder.fit(data)
+        try:
+            check_is_fitted(self.encoder.encoder)
+            self.log.info('Using cached one-hot encoder')
+        except NotFittedError as exc:
+            if self._is_encoder_trained:
+                self.log.info('FALSY NOT FITTED ERROR')
+            if data_has_categorical_features(data) and not self._is_encoder_trained:
+                self.log.info('Preprocessor one-hot encoder will be fitted')
+                self.encoder.fit(data)
+                self._is_encoder_trained = True
 
-        return encoder
+            # Store encoder to make prediction in the future
+            self.features_encoders.update({source_name: self.encoder})
 
     @staticmethod
     def _create_label_encoder(data: InputData) -> Union[LabelEncodingImplementation, None]:

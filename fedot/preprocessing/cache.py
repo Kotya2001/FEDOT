@@ -24,3 +24,6 @@ class PreprocessingCache(metaclass=SingletonMeta):
 
     def add_preprocessor(self, pipeline: 'Pipeline'):
         self._db.add_preprocessor(pipeline.root_node.descriptive_id, pipeline.preprocessor)
+
+    def reset(self):
+        self._db.reset()

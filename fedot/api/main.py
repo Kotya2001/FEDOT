@@ -114,7 +114,9 @@ class Fedot:
         self.api_composer.init_cache(**{k: input_params[k] for k in signature(self.api_composer.init_cache).parameters})
 
         # Initializes preprocessing singleton cache
-        PreprocessingCache(self.params.log)
+        preprocessing_cache = PreprocessingCache(self.params.log)
+        preprocessing_cache.reset()
+
 
         # Get metrics for optimization
         metric_name = self.params.api_params['metric_name']

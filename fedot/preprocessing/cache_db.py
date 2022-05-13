@@ -1,6 +1,7 @@
 import pickle
 import sqlite3
 import uuid
+
 from contextlib import closing
 from pathlib import Path
 from typing import Optional
@@ -36,6 +37,12 @@ class PreprocessingCacheDB:
                 cur = conn.cursor()
                 db_pickled = sqlite3.Binary(pickle.dumps(value, pickle.HIGHEST_PROTOCOL))
                 cur.execute(f'INSERT OR IGNORE INTO {self._preproc_table} VALUES (?, ?);', [uid, db_pickled])
+
+    def reset(self):
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            with conn:
+                cur = conn.cursor()
+                cur.execute(f'DELETE FROM {self._preproc_table};')
 
     def _init_db(self):
         with closing(sqlite3.connect(self.db_path)) as conn:
