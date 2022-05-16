@@ -1,5 +1,7 @@
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Union
 
+from fedot.core.data.data import InputData
+from fedot.core.data.multi_modal import MultiModalData
 from fedot.core.log import Log, SingletonMeta, default_log
 from fedot.preprocessing.cache_db import PreprocessingCacheDB
 
@@ -12,18 +14,28 @@ class PreprocessingCache(metaclass=SingletonMeta):
         self.log = log or default_log(__name__)
         self._db = PreprocessingCacheDB(db_path)
 
-    def try_find_preprocessor(self, pipeline: 'Pipeline'):
+    def try_find_preprocessor(self, pipeline: 'Pipeline', input_data: Union[InputData, MultiModalData]):
         try:
-            descriptive_id = pipeline.root_node.descriptive_id
-            matched = self._db.get_preprocessor(descriptive_id)
+            structural_id = _get_pipeline_structural_id(pipeline, input_data)
+            matched = self._db.get_preprocessor(structural_id)
             if matched is not None:
                 return matched
         except Exception as exc:
             self.log.error(f'Preprocessor search error: {exc}')
         return pipeline.preprocessor
 
-    def add_preprocessor(self, pipeline: 'Pipeline'):
-        self._db.add_preprocessor(pipeline.root_node.descriptive_id, pipeline.preprocessor)
+    def add_preprocessor(self, pipeline: 'Pipeline', input_data: Union[InputData, MultiModalData]):
+        structural_id = _get_pipeline_structural_id(pipeline, input_data)
+        self._db.add_preprocessor(structural_id, pipeline.preprocessor)
 
     def reset(self):
         self._db.reset()
+
+
+def _get_pipeline_structural_id(pipeline: 'Pipeline', input_data: Union[InputData, MultiModalData]) -> str:
+    pipeline_id = pipeline.root_node.descriptive_id
+    if isinstance(input_data, InputData):
+        data_id = ''.join(str(input_data.features[[0, -1]]))
+    else:
+        ...  # TODO: initialize 'data_id' for multimodal case
+    return f'{pipeline_id}_{data_id}'  # re.sub(f'[{string.punctuation}]+', '', pipeline.root_node.descriptive_id)
