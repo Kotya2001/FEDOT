@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
-from fedot.core.data.data import InputData, OutputData, data_type_is_table, data_type_is_ts
+from fedot.core.data.data import InputData, OutputData, data_type_is_table, data_type_is_ts, data_type_is_text
 from fedot.core.data.data_preprocessing import (
     data_has_categorical_features,
     data_has_missing_values,
@@ -225,7 +225,6 @@ class DataPreprocessor:
             data.idx = np.array(data.idx)
             data = self.binary_categorical_processors[source_name].transform(data)
 
-            self._apply_categorical_encoding(data, source_name)
         return data
 
     def _prepare_optional_for_fit(self, pipeline, data: InputData, source_name: str):
@@ -502,7 +501,7 @@ class DataPreprocessor:
             if data.target is not None and len(data.target.shape) < 2:
                 data.target = data.target.reshape((-1, 1))
 
-        elif data_type_is_ts(data):
+        elif data_type_is_ts(data) or data_type_is_text(data):
             data.features = np.ravel(data.features)
 
         return data
