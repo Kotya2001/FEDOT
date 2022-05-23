@@ -37,5 +37,5 @@ def _get_pipeline_structural_id(pipeline: 'Pipeline', input_data: Union[InputDat
     if isinstance(input_data, InputData):
         data_id = ''.join(str(input_data.features[[0, -1]]))
     else:
-        ...  # TODO: initialize 'data_id' for multimodal case
+        data_id = ''.join([str(x.features[[0, -1]]) for x in input_data.values()])
     return f'{pipeline_id}_{data_id}'  # re.sub(f'[{string.punctuation}]+', '', pipeline.root_node.descriptive_id)
