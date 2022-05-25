@@ -397,10 +397,8 @@ class DataPreprocessor:
 
         # v2
         if self._is_imputer_trained:
-            self.log.info('Imputer is already trained')
             output_data = self.imputer.transform(data)
         else:
-            self.log.info('Imputer will be fitted')
             output_data = self.imputer.fit_transform(data)
             self._is_imputer_trained = True
         data.features = output_data.predict
@@ -511,10 +509,7 @@ class DataPreprocessor:
         #     self.features_encoders.update({source_name: self.encoder})
 
         # v2
-        if self._is_encoder_trained:
-            self.log.info('Encoder is already trained')
-        else:
-            self.log.info('Encoder will be fitted')
+        if not self._is_encoder_trained:
             self.encoder.fit(data)
             self._is_encoder_trained = True
             self.features_encoders.update({source_name: self.encoder})
