@@ -2,12 +2,10 @@ from typing import Callable, Optional, Sequence
 
 import numpy as np
 
-from fedot.core.composer.constraint import constraint_function
 from fedot.core.optimisers.gp_comp.individual import Individual
 from fedot.core.optimisers.gp_comp.operators.operator import Operator, PopulationT
 from fedot.core.optimisers.graph import OptGraph
-from fedot.core.optimisers.optimizer import GraphGenerationParams
-
+from fedot.core.pipelines.validation import GraphValidator
 
 GraphSampler = Callable[[], OptGraph]
 
@@ -17,8 +15,8 @@ class InitialPopulationBuilder:
     One is with initial graphs that are augmented and randomized with mutation operator.
     Another is just sampling and validating graphs from provided graph sampler."""
 
-    def __init__(self, graph_generation_params: GraphGenerationParams):
-        self.graph_gen_params = graph_generation_params
+    def __init__(self, validator: GraphValidator):
+        self.validator = validator
         self.mutation_operator: Callable[[Individual], Individual] = lambda ind: ind
         self.graph_sampler: Optional[GraphSampler] = None
         self.initial_graphs: Sequence[OptGraph] = ()
@@ -46,7 +44,7 @@ class InitialPopulationBuilder:
         while len(population) < pop_size:
             new_ind = Individual(self.graph_sampler())
             new_ind = self.mutation_operator(new_ind)
-            if constraint_function(new_ind.graph, self.graph_gen_params) and new_ind not in population:
+            if new_ind not in population and self.validator(new_ind.graph):
                 population.append(new_ind)
 
         return population
