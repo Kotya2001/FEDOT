@@ -1,6 +1,6 @@
 from copy import copy
 from random import randint
-from typing import (Any, Callable, List, Optional)
+from typing import (Any, Callable, List, Optional, Sequence)
 
 from numpy import random
 
@@ -30,7 +30,7 @@ class RandomSearchComposer(Composer):
             pipeline.fit(train_data)
             return self.optimiser.objective(pipeline, reference_data=test_data)
 
-        best_pipeline = self.optimiser.optimise(objective_eval)
+        best_pipeline = self.optimiser.optimise(objective_eval)[0]
         return best_pipeline
 
 
@@ -84,7 +84,7 @@ class RandomSearchOptimiser(GraphOptimiser):
         self._iter_num = iter_num
         super().__init__(objective)
 
-    def optimise(self, objective_evaluator: ObjectiveFunction, show_progress: bool = True) -> Pipeline:
+    def optimise(self, objective_evaluator: ObjectiveFunction, show_progress: bool = True) -> Sequence[Pipeline]:
         best_metric_value = 1000
         best_set = None
         history = []
@@ -100,4 +100,4 @@ class RandomSearchOptimiser(GraphOptimiser):
             if show_progress:
                 self.log.info(f'Iter {i}: best metric {best_metric_value},'
                               f'try {new_metric_value} with num nodes {len(new_pipeline.nodes)}')
-        return best_set
+        return [best_set]

@@ -1,7 +1,7 @@
 from copy import deepcopy
 from functools import partial
 from itertools import zip_longest
-from typing import Any, Optional, Union, List, Iterable, Sequence, Tuple
+from typing import Any, Optional, Union, List, Iterable, Sequence, Tuple, Collection
 
 from tqdm import tqdm
 
@@ -36,18 +36,14 @@ from fedot.core.optimisers.objective.objective_eval import ObjectiveEvaluate
 
 class GPGraphOptimiserParameters(GraphOptimiserParameters):
     """
-        This class is for defining the parameters of optimiser
+    This class is for defining the parameters of optimiser
 
-        :param selection_types: List of selection operators types
-        :param crossover_types: List of crossover operators types
-        :param mutation_types: List of mutation operators types
-        :param regularization_type: type of regularization operator
-        :param genetic_scheme_type: type of genetic evolutionary scheme
-        :param with_auto_depth_configuration: flag to enable option of automated tree depth configuration during
-        evolution. Default False.
-        :param depth_increase_step: the step of depth increase in automated depth configuration
-        :param multi_objective: flag used for algorithm of type definition (multi-objective if true and single-objective
-        if false). Value is defined in ComposerBuilder. Default False.
+    :param selection_types: List of selection operators types
+    :param crossover_types: List of crossover operators types
+    :param mutation_types: List of mutation operators types
+    :param regularization_type: type of regularization operator
+    :param genetic_scheme_type: type of genetic evolutionary scheme
+    evolution. Default False.
     """
 
     def set_default_params(self):
@@ -188,7 +184,7 @@ class EvoGraphOptimiser(GraphOptimiser):
                 self._operators_prob.next(self.population)
 
     def optimise(self, objective_evaluator: ObjectiveEvaluate,
-                 show_progress: bool = True) -> Union[OptGraph, List[OptGraph]]:
+                 show_progress: bool = True) -> Sequence[OptGraph]:
 
         evaluator = self._get_evaluator(objective_evaluator)
 
@@ -222,15 +218,8 @@ class EvoGraphOptimiser(GraphOptimiser):
 
                 self._next_population(new_population)
 
-        best = self.generations.best_individuals
-        return self.to_outputs(best)
-
-    def to_outputs(self, individuals: Iterable[Individual]) -> Union[OptGraph, List[OptGraph]]:
-        graphs = [ind.graph for ind in individuals]
-        # for single objective with single result return it directly
-        if not self.objective.is_multi_objective and len(graphs) == 1:
-            return graphs[0]
-        return graphs
+        all_best_graphs = [ind.graph for ind in self.generations.best_individuals]
+        return all_best_graphs
 
     def with_elitism(self, pop_size: int) -> bool:
         if self.objective.is_multi_objective:
