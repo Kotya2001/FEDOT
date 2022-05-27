@@ -3,7 +3,6 @@ from typing import Dict, List, Optional, Union
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import LabelEncoder
 
 from fedot.core.data.data import InputData, OutputData, data_type_is_table, data_type_is_ts
 from fedot.core.data.data_preprocessing import (
@@ -28,6 +27,7 @@ from fedot.preprocessing.data_types import NAME_CLASS_INT, TableTypesCorrector
 # The allowed percent of empty samples in features.
 # Example: 90% objects in features are 'nan', then drop this feature from data.
 from fedot.preprocessing.structure import DEFAULT_SOURCE_NAME, PipelineStructureExplorer
+from sklearn.preprocessing import LabelEncoder
 
 ALLOWED_NAN_PERCENT = 0.9
 
@@ -46,22 +46,18 @@ class DataPreprocessor:
 
     def __init__(self, log: Optional[Log] = None):
         # There was performed encoding for string target column or not
-        self.target_encoders = {}
-        self.features_encoders = {}
+        self.target_encoders: Dict[str, LabelEncoder] = {}
+        self.features_encoders: Dict[str, OneHotEncodingImplementation] = {}
+        self.features_imputers: Dict[str, ImputationImplementation] = {}
         self.ids_relevant_features: Dict[str, List[int]] = {}
 
         # Cannot be processed due to incorrect types or large number of nans
-        self.ids_incorrect_features = {}
+        self.ids_incorrect_features: Dict[str, List[int]] = {}
         # Categorical preprocessor for binary categorical features
-        self.binary_categorical_processors = {}
-        self.types_correctors = {}
+        self.binary_categorical_processors: Dict[str, BinaryCategoricalPreprocessor] = {}
+        self.types_correctors: Dict[str, TableTypesCorrector] = {}
         self.structure_analysis = PipelineStructureExplorer()
         self.main_target_source_name = None
-
-        self._is_imputer_trained = False
-        self._is_encoder_trained = False
-        self.imputer = ImputationImplementation()
-        self.encoder = OneHotEncodingImplementation()
 
         self.log = log or default_log(__name__)
 
@@ -81,12 +77,12 @@ class DataPreprocessor:
         self.types_correctors = {}
 
         if isinstance(data, InputData):
-            self.binary_categorical_processors.update({DEFAULT_SOURCE_NAME: BinaryCategoricalPreprocessor()})
-            self.types_correctors.update({DEFAULT_SOURCE_NAME: TableTypesCorrector()})
+            self.binary_categorical_processors[DEFAULT_SOURCE_NAME] = BinaryCategoricalPreprocessor()
+            self.types_correctors[DEFAULT_SOURCE_NAME] = TableTypesCorrector()
         elif isinstance(data, MultiModalData):
             for data_source in data:
-                self.binary_categorical_processors.update({data_source: BinaryCategoricalPreprocessor()})
-                self.types_correctors.update({data_source: TableTypesCorrector()})
+                self.binary_categorical_processors[data_source] = BinaryCategoricalPreprocessor()
+                self.types_correctors[data_source] = TableTypesCorrector()
         else:
             raise ValueError('Unknown type of data.')
 
@@ -230,7 +226,7 @@ class DataPreprocessor:
             data.idx = np.array(data.idx)
             data = self.binary_categorical_processors[source_name].transform(data)
 
-            self._apply_categorical_encoding(data, source_name)
+            #self._apply_categorical_encoding(data, source_name)
         return data
 
     def _prepare_optional_for_fit(self, pipeline, data: InputData, source_name: str):
@@ -268,8 +264,8 @@ class DataPreprocessor:
         :param source_name: name of data source node
         """
         # Initialize empty lists to fill it with indices
-        self.ids_relevant_features.update({source_name: []})
-        self.ids_incorrect_features.update({source_name: []})
+        self.ids_relevant_features[source_name] = []
+        self.ids_incorrect_features[source_name] = []
 
         features = data.features
         n_samples, n_columns = features.shape
@@ -315,10 +311,10 @@ class DataPreprocessor:
 
     def apply_imputation(self, data: Union[InputData, MultiModalData]) -> Union[InputData, MultiModalData]:
         if isinstance(data, InputData):
-            return self._apply_imputation_unidata(data)
+            return self._apply_imputation_unidata(data, DEFAULT_SOURCE_NAME)
         if isinstance(data, MultiModalData):
             for data_source_name, value in data.items():
-                data[data_source_name].features = self._apply_imputation_unidata(value)
+                data[data_source_name] = self._apply_imputation_unidata(value, data_source_name)
             return data
         raise ValueError(f"Data format is not supported.")
 
@@ -332,12 +328,7 @@ class DataPreprocessor:
         :return encoder: operation for preprocessing categorical features
         """
 
-        self._fit_onehot_encoder_if_needed(data, source_name)
-
-        encoder_output = self.encoder.transform(data, True)
-        transformed = encoder_output.predict
-        data.features = transformed
-        data.supplementary_data = encoder_output.supplementary_data
+        self._apply_onehot_encoding(data, source_name)
 
     def label_encoding_for_fit(self, data: InputData, source_name: str = DEFAULT_SOURCE_NAME):
         """
@@ -366,7 +357,7 @@ class DataPreprocessor:
         data.features = data.features[:border]
         data.target = data.target[:border]
 
-    def _apply_imputation_unidata(self, data: InputData):
+    def _apply_imputation_unidata(self, data: InputData, source_name: str):
         """ Fill in the gaps in the data inplace.
 
         :param data: data for fill in the gaps
@@ -396,11 +387,13 @@ class DataPreprocessor:
         # return data
 
         # v2
-        if self._is_imputer_trained:
-            output_data = self.imputer.transform(data)
+        imputer = self.features_imputers.get(source_name)
+        if imputer is None:
+            imputer = ImputationImplementation()
+            output_data = imputer.fit_transform(data)
+            self.features_imputers[source_name] = imputer
         else:
-            output_data = self.imputer.fit_transform(data)
-            self._is_imputer_trained = True
+            output_data = imputer.transform(data)
         data.features = output_data.predict
         return data
 
@@ -417,8 +410,7 @@ class DataPreprocessor:
 
         # Check if column contains string objects
         features_types = data.supplementary_data.column_types['features']
-        categorical_ids, non_categorical_ids = find_categorical_columns(data.features,
-                                                                        features_types)
+        categorical_ids, _ = find_categorical_columns(data.features, features_types)
         if categorical_ids:
             # Perform encoding for categorical features
             encoder_output = self.features_encoders[source_name].transform(data, True)
@@ -429,16 +421,15 @@ class DataPreprocessor:
 
     def _train_target_encoder(self, data: InputData, source_name: str):
         """ Convert string categorical target into integer column using LabelEncoder """
-        categorical_ids, non_categorical_ids = find_categorical_columns(data.target,
-                                                                        data.supplementary_data.column_types['target'])
+        categorical_ids, _ = find_categorical_columns(data.target, data.supplementary_data.column_types['target'])
 
         if categorical_ids:
             # Target is categorical
             target_encoder = LabelEncoder()
             target_encoder.fit(data.target)
-            self.target_encoders.update({source_name: target_encoder})
+            self.target_encoders[source_name] = target_encoder
 
-    def _apply_target_encoding(self, data, source_name: str) -> np.array:
+    def _apply_target_encoding(self, data: InputData, source_name: str) -> np.array:
         """ Apply trained encoder for target column
 
         For example, target [['red'], ['green'], ['red']] will be converted into
@@ -460,7 +451,7 @@ class DataPreprocessor:
 
         if main_target_source_name in self.target_encoders:
             # Check if column contains string objects
-            categorical_ids, non_categorical_ids = find_categorical_columns(column_to_transform)
+            categorical_ids, _ = find_categorical_columns(column_to_transform)
             if categorical_ids:
                 # There is no need to perform converting (it was performed already)
                 return column_to_transform
@@ -487,7 +478,7 @@ class DataPreprocessor:
         else:
             return self.main_target_source_name
 
-    def _fit_onehot_encoder_if_needed(self, data: InputData, source_name: str):
+    def _apply_onehot_encoding(self, data: InputData, source_name: str):
         """
         Fills in the gaps, converts categorical features using OneHotEncoder and create encoder.
 
@@ -509,10 +500,14 @@ class DataPreprocessor:
         #     self.features_encoders.update({source_name: self.encoder})
 
         # v2
-        if not self._is_encoder_trained:
-            self.encoder.fit(data)
-            self._is_encoder_trained = True
-            self.features_encoders.update({source_name: self.encoder})
+        encoder = self.features_encoders.get(source_name)
+        if encoder is None:
+            encoder = OneHotEncodingImplementation()
+            encoder.fit(data)
+            self.features_encoders[source_name] = encoder
+        output_data = encoder.transform(data, True)
+        data.features = output_data.predict
+        data.supplementary_data = output_data.supplementary_data
 
     @staticmethod
     def _create_label_encoder(data: InputData) -> Union[LabelEncodingImplementation, None]:
@@ -537,7 +532,7 @@ class DataPreprocessor:
         two-dimensional arrays, time series - one-dim array
         """
 
-        if data_type_is_table(data) or data.data_type == DataTypesEnum.multi_ts:
+        if data_type_is_table(data) or data.data_type is DataTypesEnum.multi_ts:
             if len(data.features.shape) < 2:
                 data.features = data.features.reshape((-1, 1))
             if data.target is not None and len(data.target.shape) < 2:
@@ -551,7 +546,7 @@ class DataPreprocessor:
     @staticmethod
     def convert_indexes_for_fit(pipeline, data: Union[InputData, MultiModalData]):
         if isinstance(data, MultiModalData):
-            for data_source_name, values in data.items():
+            for data_source_name in data:
                 if data_type_is_ts(data[data_source_name]):
                     data[data_source_name] = data[data_source_name].convert_non_int_indexes_for_fit(pipeline)
             return data
@@ -563,7 +558,7 @@ class DataPreprocessor:
     @staticmethod
     def convert_indexes_for_predict(pipeline, data: Union[InputData, MultiModalData]):
         if isinstance(data, MultiModalData):
-            for data_source_name, values in data.items():
+            for data_source_name in data:
                 if data_type_is_ts(data[data_source_name]):
                     data[data_source_name] = data[data_source_name].convert_non_int_indexes_for_predict(pipeline)
             return data
@@ -586,7 +581,7 @@ class DataPreprocessor:
             data.supplementary_data.was_preprocessed = True
         else:
             # Multimodal data
-            for data_source_name, values in data.items():
+            for values in data.values():
                 values.supplementary_data.was_preprocessed = True
 
 
@@ -614,7 +609,7 @@ def update_indices_for_time_series(test_data: Union[InputData, MultiModalData]):
 
     if isinstance(test_data, MultiModalData):
         # Process multimodal data - change indices in every data block
-        for data_source_name, input_data in test_data.items():
+        for input_data in test_data.values():
             forecast_len = input_data.task.task_params.forecast_length
             if forecast_len < len(input_data.idx):
                 # Indices incorrect - there is a need to reassign them
