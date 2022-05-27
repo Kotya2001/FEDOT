@@ -1,5 +1,7 @@
 import os
 
+from test.unit.utilities.test_pipeline_import_export import create_four_depth_pipeline
+
 import pytest
 
 from fedot.core.data.data import InputData
@@ -7,7 +9,6 @@ from fedot.core.data.data_split import train_test_data_setup
 from fedot.core.log import Log, LogManager, default_log
 from fedot.core.operations.model import Model
 from fedot.core.utils import DEFAULT_PARAMS_STUB
-from test.unit.utilities.test_pipeline_import_export import create_four_depth_pipeline
 
 
 @pytest.fixture()
@@ -78,7 +79,7 @@ def test_logger_manager_keeps_loggers_correctly():
     LogManager().clear_cache()
 
     pipeline = create_four_depth_pipeline()
-    expected_number_of_loggers = 6
+    expected_number_of_loggers = 7  # TODO: changed just cause of PreprocessingCache() creation in pipeline.fit(...) is it ok?
 
     file = os.path.join('../data', 'advanced_classification.csv')
     test_file_path = str(os.path.dirname(__file__))
