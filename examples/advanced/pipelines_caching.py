@@ -1,15 +1,14 @@
 import collections
 import operator
 import timeit
-
 from collections import defaultdict
 from functools import reduce
 from statistics import mean
-from test.unit.api.test_main_api import get_dataset
 from timeit import repeat
 from typing import TYPE_CHECKING, Optional
 
 import pandas as pd
+from matplotlib import colors, pyplot as plt
 
 from fedot.api.main import Fedot
 from fedot.core.log import SingletonMeta
@@ -17,7 +16,7 @@ from fedot.core.optimisers.opt_history import OptHistory
 from fedot.core.repository.tasks import TsForecastingParams
 from fedot.core.utils import fedot_project_root
 from fedot.preprocessing.cache import PreprocessingCache
-from matplotlib import colors, pyplot as plt
+from test.unit.api.test_main_api import get_dataset
 
 if TYPE_CHECKING:
     from fedot.core.pipelines.pipeline import Pipeline
@@ -119,7 +118,7 @@ def use_cache_check(n_jobs: int = 1, test_preprocessing: bool = False):
         for timeout in timeouts:
             c_pipelines = 0.
             time = 0.
-            mean_range = 2
+            mean_range = 3
             cache_effectiveness = collections.Counter()
             for i in range(mean_range):
                 train_data_tmp = train_data.copy()
@@ -129,13 +128,13 @@ def use_cache_check(n_jobs: int = 1, test_preprocessing: bool = False):
                 auto_model = Fedot(**base_fedot_params, timeout=timeout, use_cache=basic_cache_usage)
                 auto_model.fit(features=train_data_tmp, target='target')
                 auto_model.predict_proba(features=test_data_tmp)
-                c_pipelines = _count_pipelines(auto_model.history)
-                time = (timeit.default_timer() - start_time) / 60
+                c_pipelines += _count_pipelines(auto_model.history)
+                time += (timeit.default_timer() - start_time) / 60
                 cache_effectiveness += auto_model.api_composer.cache.effectiveness_ratio if basic_cache_usage else {}
 
             times[use_cache].append(time / mean_range)
             pipelines_count[use_cache].append(c_pipelines // mean_range)
-            cache_effectiveness = {k: v // mean_range for k, v in cache_effectiveness.items()}
+            cache_effectiveness = {k: v / mean_range for k, v in cache_effectiveness.items()}
 
             print((
                 f'\tTimeout: {timeout}'
@@ -184,7 +183,7 @@ def compare_one_process_to_many(n_jobs: int = -1, test_preprocessing: bool = Fal
         for timeout in timeouts:
             c_pipelines = 0.
             time = 0.
-            mean_range = 2
+            mean_range = 3
             cache_effectiveness = collections.Counter()
             for i in range(mean_range):
                 train_data_tmp = train_data.copy()
@@ -194,13 +193,13 @@ def compare_one_process_to_many(n_jobs: int = -1, test_preprocessing: bool = Fal
                 auto_model = Fedot(**base_fedot_params, use_cache=basic_cache_usage, timeout=timeout, n_jobs=_n_jobs)
                 auto_model.fit(features=train_data_tmp, target='target')
                 auto_model.predict_proba(test_data_tmp)
-                c_pipelines = _count_pipelines(auto_model.history)
-                time = (timeit.default_timer() - start_time) / 60
+                c_pipelines += _count_pipelines(auto_model.history)
+                time += (timeit.default_timer() - start_time) / 60
                 cache_effectiveness += auto_model.api_composer.cache.effectiveness_ratio
 
             times[_n_jobs].append(time / mean_range)
             pipelines_count[_n_jobs].append(c_pipelines // mean_range)
-            cache_effectiveness = {k: v // mean_range for k, v in cache_effectiveness.items()}
+            cache_effectiveness = {k: v / mean_range for k, v in cache_effectiveness.items()}
 
             print((
                 f'\tTimeout: {timeout}'
@@ -219,7 +218,7 @@ if __name__ == "__main__":
     examples_dct = defaultdict(lambda: (lambda: print('Wrong example number option'),))
     examples_dct.update({
         1: (dummy_time_check,),
-        2: (use_cache_check, 1, True),
+        2: (use_cache_check, 1, False),
         3: (compare_one_process_to_many, -1, True)
     })
     benchmark_number = 2
