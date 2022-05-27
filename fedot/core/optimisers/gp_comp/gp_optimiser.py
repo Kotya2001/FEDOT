@@ -4,7 +4,6 @@ from itertools import zip_longest
 from typing import Any, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
-from fedot.core.optimisers.gp_comp.generation_keeper import GenerationKeeper
 from tqdm import tqdm
 
 from fedot.core.composer.constraint import constraint_function
