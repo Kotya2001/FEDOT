@@ -3,6 +3,7 @@ from typing import Dict, List, Optional, Union
 
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import LabelEncoder
 
 from fedot.core.data.data import InputData, OutputData, data_type_is_table, data_type_is_ts
 from fedot.core.data.data_preprocessing import (
@@ -27,7 +28,6 @@ from fedot.preprocessing.data_types import NAME_CLASS_INT, TableTypesCorrector
 # The allowed percent of empty samples in features.
 # Example: 90% objects in features are 'nan', then drop this feature from data.
 from fedot.preprocessing.structure import DEFAULT_SOURCE_NAME, PipelineStructureExplorer
-from sklearn.preprocessing import LabelEncoder
 
 ALLOWED_NAN_PERCENT = 0.9
 
@@ -226,7 +226,7 @@ class DataPreprocessor:
             data.idx = np.array(data.idx)
             data = self.binary_categorical_processors[source_name].transform(data)
 
-            #self._apply_categorical_encoding(data, source_name)
+            # self._apply_categorical_encoding(data, source_name)
         return data
 
     def _prepare_optional_for_fit(self, pipeline, data: InputData, source_name: str):
@@ -238,24 +238,30 @@ class DataPreprocessor:
             # Data contains missing values
             has_imputer = self.structure_analysis.check_structure_by_tag(pipeline, tag_to_check='imputation',
                                                                          source_name=source_name)
-            if has_imputer is False:
-                self.apply_imputation(data)
+            if not has_imputer:
+                self._apply_imputation_unidata(data, source_name)
 
         if data_has_categorical_features(data):
             # Data contains categorical features values
             has_encoder = self.structure_analysis.check_structure_by_tag(pipeline, tag_to_check='encoding',
                                                                          source_name=source_name)
-            if has_encoder is False:
-                self.one_hot_encoding_for_fit(data, source_name)
+            if not has_encoder:
+                self._apply_categorical_encoding(data, source_name)
 
     def _prepare_optional_for_predict(self, pipeline, data: InputData, source_name: str):
         """ Perform optional preprocessing for predict stage """
-        has_imputer = self.structure_analysis.check_structure_by_tag(pipeline, tag_to_check='imputation',
-                                                                     source_name=source_name)
-        if data_has_missing_values(data) and not has_imputer:
-            data = self.apply_imputation(data)
+        if data_has_missing_values(data):
+            has_imputer = self.structure_analysis.check_structure_by_tag(pipeline, tag_to_check='imputation',
+                                                                         source_name=source_name)
+            if not has_imputer:
+                data = self._apply_imputation_unidata(data, source_name)
 
-        self._apply_categorical_encoding(data, source_name)
+        if data_has_categorical_features(data):
+            # Data contains categorical features values
+            has_encoder = self.structure_analysis.check_structure_by_tag(pipeline, tag_to_check='encoding',
+                                                                         source_name=source_name)
+            if not has_encoder:
+                self._apply_categorical_encoding(data, source_name)
 
     def _find_features_full_of_nans(self, data: InputData, source_name: str):
         """ Find features with more than ALLOWED_NAN_PERCENT nan's
@@ -308,27 +314,6 @@ class DataPreprocessor:
 
         data.features = np.array(features)
         return data
-
-    def apply_imputation(self, data: Union[InputData, MultiModalData]) -> Union[InputData, MultiModalData]:
-        if isinstance(data, InputData):
-            return self._apply_imputation_unidata(data, DEFAULT_SOURCE_NAME)
-        if isinstance(data, MultiModalData):
-            for data_source_name, value in data.items():
-                data[data_source_name] = self._apply_imputation_unidata(value, data_source_name)
-            return data
-        raise ValueError(f"Data format is not supported.")
-
-    def one_hot_encoding_for_fit(self, data: InputData, source_name: str = DEFAULT_SOURCE_NAME):
-        """
-        Encode categorical features to numerical. In additional,
-        save encoders to use later for prediction data.
-
-        :param data: data to transform
-        :param source_name: name of data source node
-        :return encoder: operation for preprocessing categorical features
-        """
-
-        self._apply_onehot_encoding(data, source_name)
 
     def label_encoding_for_fit(self, data: InputData, source_name: str = DEFAULT_SOURCE_NAME):
         """
@@ -399,25 +384,23 @@ class DataPreprocessor:
 
     def _apply_categorical_encoding(self, data: InputData, source_name: str):
         """
-        Transformation the prediction data inplace. Use the same transformations as for the training data.
+        Transforms the data inplace. Uses the same transformations as for the training data if trained already.
+        Otherwise fits OneHotEncoder and converts data's categorical features with it.
 
         :param data: data to transformation
         :param source_name: name of data source node
         """
-        if source_name not in self.features_encoders:
+        if not data_has_categorical_features(data):
             # No encoding needed for current data
             return data
-
-        # Check if column contains string objects
-        features_types = data.supplementary_data.column_types['features']
-        categorical_ids, _ = find_categorical_columns(data.features, features_types)
-        if categorical_ids:
-            # Perform encoding for categorical features
-            encoder_output = self.features_encoders[source_name].transform(data, True)
-            transformed = encoder_output.predict
-            data.features = transformed
-
-            data.supplementary_data = encoder_output.supplementary_data
+        encoder = self.features_encoders.get(source_name)
+        if encoder is None:
+            encoder = OneHotEncodingImplementation()
+            encoder.fit(data)
+            self.features_encoders[source_name] = encoder
+        output_data = encoder.transform(data, True)
+        data.features = output_data.predict
+        data.supplementary_data = output_data.supplementary_data
 
     def _train_target_encoder(self, data: InputData, source_name: str):
         """ Convert string categorical target into integer column using LabelEncoder """
@@ -477,37 +460,6 @@ class DataPreprocessor:
             return DEFAULT_SOURCE_NAME
         else:
             return self.main_target_source_name
-
-    def _apply_onehot_encoding(self, data: InputData, source_name: str):
-        """
-        Fills in the gaps, converts categorical features using OneHotEncoder and create encoder.
-
-        :param data: data to preprocess
-        """
-
-        # try:
-        #     check_is_fitted(self.encoder.encoder)
-        #     self.log.info('Using cached one-hot encoder')
-        # except NotFittedError as exc:
-        #     if self._is_encoder_trained:
-        #         self.log.info('FALSY NOT FITTED ERROR')
-        #     if data_has_categorical_features(data) and not self._is_encoder_trained:
-        #         self.log.info('Preprocessor one-hot encoder will be fitted')
-        #         self.encoder.fit(data)
-        #         self._is_encoder_trained = True
-
-        #     # Store encoder to make prediction in the future
-        #     self.features_encoders.update({source_name: self.encoder})
-
-        # v2
-        encoder = self.features_encoders.get(source_name)
-        if encoder is None:
-            encoder = OneHotEncodingImplementation()
-            encoder.fit(data)
-            self.features_encoders[source_name] = encoder
-        output_data = encoder.transform(data, True)
-        data.features = output_data.predict
-        data.supplementary_data = output_data.supplementary_data
 
     @staticmethod
     def _create_label_encoder(data: InputData) -> Union[LabelEncodingImplementation, None]:
