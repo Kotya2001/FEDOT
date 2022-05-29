@@ -232,16 +232,26 @@ class OptHistory:
                 return os.path.join(default_fedot_data_dir(), self.save_folder)
         return None
 
-    def print_leaderboard(self):
+    def print_leaderboard(self, top_n: int = 10):
+        """
+        Prints ordered description of best solutions in history
+        :param top_n: number of solutions to print
+        """
         top_individuals = sorted(list(itertools.chain(*self.individuals)),
-                                 key=lambda ind: ind.fitness.value)[:10]
-        print(f'Position | Fitness | Pipeline')
-        for i, individual in enumerate(top_individuals):
-            print(f'{i} | {individual.graph.descriptive_id} | {round(individual.fitness.value, 4)}')
-
+                                 key=lambda ind: ind.fitness.value)[:top_n]
+        print(f'Position | Fitness | Pipeline | Generation')
+        top_item_id = 0
+        for gen_id, generation in enumerate(self.individuals):
+            for ind_id, individual in enumerate(generation):
+                if individual in top_individuals:
+                    print(f'{top_item_id} | '
+                          f'{individual.graph.descriptive_id} | '
+                          f'{round(individual.fitness.value, 4)} | '
+                          f'g{gen_id}-i{ind_id}')
+                    top_item_id += 1
         # add info about initial assumptions (stored as zero generation)
         for i, individual in enumerate(self.individuals[0]):
-            print(f'Initial {i} | {individual.graph.descriptive_id} | {round(individual.fitness.value, 4)}')
+            print(f'Initial {i} | {individual.graph.descriptive_id} | {round(individual.fitness.value, 4)} | -')
 
 
 def log_to_history(history: OptHistory, population: PopulationT, generations: GenerationKeeper):

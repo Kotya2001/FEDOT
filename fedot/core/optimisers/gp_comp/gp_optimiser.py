@@ -128,8 +128,7 @@ class EvoGraphOptimiser(GraphOptimiser):
         # stopping_after_n_generation may be None, so use some obvious max number
         max_stagnation_length = parameters.stopping_after_n_generation or requirements.num_of_generations
         self.stop_optimisation = \
-            GroupedCondition(self.log) \
-                .add_condition(
+            GroupedCondition(self.log).add_condition(
                 lambda: self.timer.is_time_limit_reached(self.generations.generation_num),
                 'Optimisation stopped: Time limit is reached'
             ).add_condition(
@@ -173,9 +172,9 @@ class EvoGraphOptimiser(GraphOptimiser):
         return randomized_pop
 
     def _init_population(self, pop_size: int):
-        if self.initial_graph:
+        if self.initial_graphs:
             initial_individuals = [Individual(self.graph_generation_params.adapter.adapt(g)) for g in
-                                   self.initial_graph]
+                                   self.initial_graphs]
             new_population = self._create_randomized_pop(initial_individuals, pop_size)
         else:
             new_population = self._make_population(pop_size)
@@ -217,10 +216,10 @@ class EvoGraphOptimiser(GraphOptimiser):
             pop_size = self._pop_size.initial
 
             # Adding of initial assumptions to history as zero generation
-            if self.initial_graph:
+            if self.initial_graphs:
                 # TODO refactor to new optimiser architecture
                 initial_individuals = [Individual(self.graph_generation_params.adapter.adapt(g)) for g in
-                                       self.initial_graph]
+                                       self.initial_graphs]
                 self._next_population(evaluator(initial_individuals))
 
             self._next_population(evaluator(self._init_population(pop_size)))
