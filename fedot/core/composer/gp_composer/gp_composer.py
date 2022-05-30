@@ -9,8 +9,10 @@ from fedot.core.composer.composer import Composer, ComposerRequirements
 from fedot.core.data.data import InputData
 from fedot.core.data.multi_modal import MultiModalData
 from fedot.core.log import Log
+from fedot.core.optimisers.gp_comp.operators.evaluation import MultiprocessingDispatcher, ObjectiveEvaluationDispatcher
 from fedot.core.optimisers.gp_comp.operators.mutation import MutationStrengthEnum
 from fedot.core.optimisers.graph import OptGraph
+from fedot.core.optimisers.objective import ObjectiveEvaluate, GraphFunction
 from fedot.core.optimisers.objective.data_objective_builder import DataObjectiveBuilder
 from fedot.core.optimisers.opt_history import OptHistory, log_to_history
 from fedot.core.optimisers.optimizer import GraphOptimiser
@@ -71,16 +73,17 @@ class GPComposer(Composer):
                  cache: Optional[OperationsCache] = None):
 
         super().__init__(optimiser, composer_requirements, initial_pipelines, logger)
+        self.composer_requirements = composer_requirements
 
         self.optimiser = optimiser
         self.cache: Optional[OperationsCache] = cache
 
         self._history = OptHistory(self.optimiser.objective, self.optimiser.parameters.history_folder)
-        self.objective_builder = DataObjectiveBuilder(self.optimiser.objective,
-                                                      self.composer_requirements.max_pipeline_fit_time,
-                                                      self.composer_requirements.cv_folds,
-                                                      self.composer_requirements.validation_blocks,
-                                                      self.cache, self.log)
+        self.objective_builder = DataObjectiveBuilder(optimiser.objective,
+                                                      composer_requirements.max_pipeline_fit_time,
+                                                      composer_requirements.cv_folds,
+                                                      composer_requirements.validation_blocks,
+                                                      cache, logger)
 
     def compose_pipeline(self, data: Union[InputData, MultiModalData]) -> Union[Pipeline, List[Pipeline]]:
         self.optimiser.graph_generation_params.advisor.task = data.task
@@ -102,11 +105,26 @@ class GPComposer(Composer):
         self.optimiser.optimisation_callback = history_callback
 
         objective_evaluator = self.objective_builder.build(data)
-        opt_result = self.optimiser.optimise(objective_evaluator)
+        dispatcher = self._get_evaluation_dispatcher(objective_evaluator)
+        self.optimiser.eval_dispatcher.post_eval_callback = dispatcher
+
+        opt_result = self.optimiser.optimise(objective_evaluator.evaluate)
 
         best_pipeline = self._convert_opt_results_to_pipeline(opt_result)
         self.log.info('GP composition finished')
         return best_pipeline
+
+    def _get_evaluation_dispatcher(self, objective_evaluator: ObjectiveEvaluate) -> ObjectiveEvaluationDispatcher:
+        compute_intermediate_metrics: Optional[GraphFunction] = None
+        if self.composer_requirements.collect_intermediate_metric:
+            compute_intermediate_metrics = objective_evaluator.evaluate_intermediate_metrics
+
+        return MultiprocessingDispatcher(graph_adapter=self.optimiser.graph_generation_params.adapter,
+                                         timer=self.timer,
+                                         n_jobs=self.composer_requirements.n_jobs,
+                                         cleanup_fn=Pipeline.unfit,
+                                         post_eval_callback=compute_intermediate_metrics,
+                                         log=self.log)
 
     def _convert_opt_results_to_pipeline(self, opt_result: Union[OptGraph, List[OptGraph]]) -> Pipeline:
         return [self.optimiser.graph_generation_params.adapter.restore(graph)
