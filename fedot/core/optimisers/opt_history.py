@@ -239,7 +239,7 @@ class OptHistory:
         """
         top_individuals = sorted(list(itertools.chain(*self.individuals)),
                                  key=lambda ind: ind.fitness.value)[:top_n]
-        print(f'Position | Fitness | Pipeline | Generation')
+        print(f'Position | Pipeline | Fitness | | Generation')
         top_item_id = 0
         for gen_id, generation in enumerate(self.individuals):
             for ind_id, individual in enumerate(generation):
@@ -251,7 +251,10 @@ class OptHistory:
                     top_item_id += 1
         # add info about initial assumptions (stored as zero generation)
         for i, individual in enumerate(self.individuals[0]):
-            print(f'Initial {i} | {individual.graph.descriptive_id} | {round(individual.fitness.value, 4)} | -')
+            print(f'Initial {i} | '
+                  f'{individual.graph.descriptive_id} | '
+                  f'{round(individual.fitness.value, 4)} | '
+                  f'-')
 
 
 def log_to_history(history: OptHistory, population: PopulationT, generations: GenerationKeeper):
